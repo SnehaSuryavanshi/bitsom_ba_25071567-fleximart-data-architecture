@@ -1,4 +1,4 @@
-# FlexiMart Data Architecture Project
+# FlexiMart Data Architecture Project #
 
 **Student Name:** Sneha Vinod Suryavanshi
 **Student ID:**  bitsom_ba_25071567  
