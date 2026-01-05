@@ -40,15 +40,21 @@ ORDER BY total_revenue DESC;
 -- Business Question: "Show monthly sales trends for the year 2024. For each month, display the month name, total number of orders, total revenue, and the running total of revenue (cumulative revenue from January to that month)."
 -- Expected to show monthly and cumulative revenue
 
-SELECT
-  DATE_FORMAT(order_date, '%M') AS month_name,
-  COUNT(DISTINCT order_id) AS total_orders,
-  SUM(total_amount) AS monthly_revenue,
-  SUM(SUM(total_amount)) OVER (
-    ORDER BY DATE_FORMAT(order_date, '%Y-%m')
-    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-  ) AS cumulative_revenue
-FROM orders
-WHERE YEAR(order_date) = 2024
-GROUP BY DATE_FORMAT(order_date, '%Y-%m')
-ORDER BY MIN(order_date);
+SELECT 
+    MONTHNAME(o.order_date) AS month_name,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    SUM(oi.subtotal) AS monthly_revenue,
+    SUM(SUM(oi.subtotal)) OVER (
+        ORDER BY MONTH(o.order_date) 
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS cumulative_revenue
+FROM 
+    orders o
+    INNER JOIN order_items oi ON o.order_id = oi.order_id
+WHERE 
+    YEAR(o.order_date) = 2024
+GROUP BY 
+    MONTH(o.order_date), MONTHNAME(o.order_date)
+ORDER BY 
+    MONTH(o.order_date);
+    

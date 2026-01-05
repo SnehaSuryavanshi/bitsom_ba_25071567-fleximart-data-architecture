@@ -1,96 +1,84 @@
 USE fleximart_dw;
 
--- 1. Total sales by category (most important KPI)
-SELECT 
-    p.category,
-    COUNT(*) as total_transactions,
-    SUM(f.total_amount) as total_revenue,
-    AVG(f.quantity_sold) as avg_qty_sold,
-    SUM(f.total_amount) / COUNT(*) as avg_order_value
-FROM fact_sales f
-JOIN dim_product p ON f.product_key = p.product_key
-GROUP BY p.category
-ORDER BY total_revenue DESC;
+-- Query 1: Monthly Sales Drill-Down
+-- Business Scenario: "The CEO wants to see sales performance broken down by time periods. Start with yearly total, then quarterly, then monthly sales for 2024."
+-- Demonstrates: Drill-down from Year to Quarter to Month
 
--- 2. Sales by day type (weekend vs weekday trend)
 SELECT 
-    d.is_weekend,
-    CASE WHEN d.is_weekend THEN 'Weekend' ELSE 'Weekday' END as day_type,
-    COUNT(*) as transactions,
-    SUM(f.total_amount) as revenue,
-    SUM(f.quantity_sold) as total_units
-FROM fact_sales f
-JOIN dim_date d ON f.date_key = d.date_key
-GROUP BY d.is_weekend
-ORDER BY revenue DESC;
-
--- 3. Top 5 products by revenue
-SELECT 
-    p.product_name,
-    p.category,
-    SUM(f.total_amount) as total_revenue,
-    SUM(f.quantity_sold) as units_sold,
-    AVG(f.unit_price) as avg_price
-FROM fact_sales f
-JOIN dim_product p ON f.product_key = p.product_key
-GROUP BY p.product_key, p.product_name, p.category
-ORDER BY total_revenue DESC
-LIMIT 5;
-
--- 4. Sales by customer segment
-SELECT 
-    c.customer_segment,
-    COUNT(*) as customers,
-    SUM(f.total_amount) as total_spent,
-    AVG(f.total_amount) as avg_order_value
-FROM fact_sales f
-JOIN dim_customer c ON f.customer_key = c.customer_key
-GROUP BY c.customer_segment
-ORDER BY total_spent DESC;
-
--- 5. Monthly sales trend (FIXED)
-SELECT 
-    d.month_name,
     d.year,
-    d.month as month_num,
-    COUNT(*) as transactions,
-    SUM(f.total_amount) as revenue
-FROM fact_sales f
-JOIN dim_date d ON f.date_key = d.date_key
-GROUP BY d.month, d.month_name, d.year
-ORDER BY d.year, d.month;
+    d.quarter,
+    d.month_name AS month,
+    SUM(f.total_amount) AS total_sales,
+    SUM(f.quantity_sold) AS total_quantity
+FROM 
+    fact_sales f
+    INNER JOIN dim_date d ON f.date_key = d.date_key
+WHERE 
+    d.year = 2024
+GROUP BY 
+    d.year, d.quarter, d.month, d.month_name
+ORDER BY 
+    d.year, d.quarter, d.month;
 
+-- Query 2: Top 10 Products by Revenue
+-- Business Scenario: "The product manager needs to identify top-performing products. Show the top 10 products by revenue, along with their category, total units sold, and revenue contribution percentage."
+-- Includes: Revenue percentage calculation
 
--- 6. City-wise revenue
-SELECT 
-    c.city,
-    SUM(f.total_amount) as revenue,
-    COUNT(DISTINCT c.customer_key) as unique_customers
-FROM fact_sales f
-JOIN dim_customer c ON f.customer_key = c.customer_key
-GROUP BY c.city
-ORDER BY revenue DESC;
-
--- 7. High-value transactions (>50k)
 SELECT 
     p.product_name,
-    c.customer_name,
-    c.city,
-    f.total_amount,
-    f.quantity_sold,
-    d.full_date
-FROM fact_sales f
-JOIN dim_product p ON f.product_key = p.product_key
-JOIN dim_customer c ON f.customer_key = c.customer_key
-JOIN dim_date d ON f.date_key = d.date_key
-WHERE f.total_amount > 50000
-ORDER BY f.total_amount DESC;
+    p.category,
+    SUM(f.quantity_sold) AS units_sold,
+    SUM(f.total_amount) AS revenue,
+    ROUND(
+        (SUM(f.total_amount) / SUM(SUM(f.total_amount)) OVER()) * 100, 
+        2
+    ) AS revenue_percentage
+FROM 
+    fact_sales f
+    INNER JOIN dim_product p ON f.product_key = p.product_key
+GROUP BY 
+    p.product_key, p.product_name, p.category
+ORDER BY 
+    revenue DESC
+LIMIT 10;
 
--- 8. Discount analysis
+-- Query 3: Customer Segmentation
+-- Business Scenario: "Marketing wants to target high-value customers. Segment customers into 'High Value' (>₹50,000 spent), 'Medium Value' (₹20,000-₹50,000), and 'Low Value' (<₹20,000). Show count of customers and total revenue in each segment."
+-- Segments: High/Medium/Low value customers
+
+WITH customer_spending AS (
+    SELECT 
+        f.customer_key,
+        SUM(f.total_amount) AS total_spending
+    FROM 
+        fact_sales f
+    GROUP BY 
+        f.customer_key
+),
+customer_segments AS (
+    SELECT 
+        customer_key,
+        total_spending,
+        CASE 
+            WHEN total_spending > 50000 THEN 'High Value'
+            WHEN total_spending >= 20000 AND total_spending <= 50000 THEN 'Medium Value'
+            WHEN total_spending < 20000 THEN 'Low Value'
+        END AS customer_segment
+    FROM 
+        customer_spending
+)
 SELECT 
-    AVG(discount_amount) as avg_discount,
-    SUM(discount_amount) as total_discounts,
-    COUNT(*) as discounted_orders,
-    AVG(total_amount) as avg_final_amount
-FROM fact_sales 
-WHERE discount_amount > 0;
+    cs.customer_segment,
+    COUNT(DISTINCT cs.customer_key) AS customer_count,
+    SUM(cs.total_spending) AS total_revenue,
+    ROUND(AVG(cs.total_spending), 2) AS avg_revenue_per_customer
+FROM 
+    customer_segments cs
+GROUP BY 
+    cs.customer_segment
+ORDER BY 
+    CASE cs.customer_segment
+        WHEN 'High Value' THEN 1
+        WHEN 'Medium Value' THEN 2
+        WHEN 'Low Value' THEN 3
+    END;
